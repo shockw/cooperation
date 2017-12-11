@@ -19,13 +19,16 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.google.common.collect.Maps;
 import com.reache.cooperation.common.persistence.Page;
 import com.reache.cooperation.common.service.BaseService;
 import com.reache.cooperation.common.utils.Collections3;
 import com.reache.cooperation.common.utils.StringUtils;
+import com.reache.cooperation.modules.act.service.ActTaskService;
 import com.reache.cooperation.modules.act.utils.ActUtils;
 import com.reache.cooperation.modules.oa.dao.LeaveDao;
 import com.reache.cooperation.modules.oa.entity.Leave;
+import com.reache.cooperation.modules.oa.entity.TestAudit;
 
 /**
  * 请假Service
@@ -48,6 +51,8 @@ public class LeaveService extends BaseService {
 	protected RepositoryService repositoryService;
 	@Autowired
 	private IdentityService identityService;
+	@Autowired
+	private ActTaskService actTaskService;
 
 	/**
 	 * 获取流程详细及工作流参数
@@ -88,10 +93,10 @@ public class LeaveService extends BaseService {
 		identityService.setAuthenticatedUserId(leave.getCurrentUser().getLoginName());
 		
 		// 启动流程
-		String businessKey = leave.getId().toString();
+		String businessKey = ActUtils.PD_LEAVE[01]+":"+leave.getId().toString();
 		variables.put("type", "leave");
 		variables.put("busId", businessKey);
-		ProcessInstance processInstance = runtimeService.startProcessInstanceByKey(ActUtils.PD_LEAVE[0], businessKey, variables);
+		ProcessInstance processInstance = runtimeService.startProcessInstanceByKey(ActUtils.PD_LEAVE[0],  businessKey, variables);
 		leave.setProcessInstance(processInstance);
 		
 		// 更新流程实例ID
@@ -103,6 +108,42 @@ public class LeaveService extends BaseService {
 		
 	}
 
+	
+	/**
+	 * 审核审批保存
+	 * @param testAudit
+	 */
+	@Transactional(readOnly = false)
+	public void auditSave(Leave leave) {
+		
+		// 设置意见
+		leave.getAct().setComment(("yes".equals(leave.getAct().getFlag())?"[同意] ":"[驳回] ")+leave.getAct().getComment());
+		
+		leave.preUpdate();
+		
+		// 对不同环节的业务逻辑进行操作
+		String taskDefKey = leave.getAct().getTaskDefKey();
+
+		// 审核环节
+		if ("deptLeaderAudit".equals(taskDefKey)){
+			leave.setLeadText(leave.getAct().getComment());
+			leaveDao.update(leave);
+		}else if("hrAudit".equals(taskDefKey)){
+			leave.setLeadText(leave.getAct().getComment());
+			leaveDao.update(leave);
+		}else if("reportBack".equals(taskDefKey)){
+			leave.setLeadText(leave.getAct().getComment());
+			leaveDao.update(leave);
+		}else{
+			return;
+		}
+		
+		// 提交流程任务
+		Map<String, Object> vars = Maps.newHashMap();
+		vars.put("pass", "yes".equals(leave.getAct().getFlag())? "1" : "0");
+		actTaskService.complete(leave.getAct().getTaskId(), leave.getAct().getProcInsId(), leave.getAct().getComment(), vars);
+		
+	}
 	/**
 	 * 查询待办任务
 	 * @param userId 用户ID

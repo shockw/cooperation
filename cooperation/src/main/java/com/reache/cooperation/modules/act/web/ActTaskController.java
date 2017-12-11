@@ -117,7 +117,7 @@ public class ActTaskController extends BaseController {
 		if (act.getProcInsId() != null){
 			act.setProcIns(actTaskService.getProcIns(act.getProcInsId()));
 		}
-		
+		System.out.println(ActUtils.getFormUrl(formKey, act));
 		return "redirect:" + ActUtils.getFormUrl(formKey, act);
 		
 //		// 传递参数到视图
